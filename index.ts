@@ -1,40 +1,51 @@
-var Corona = {}
-
-class Proxy {
-  constructor(broker, objid) {
-    this.broker = broker;
-    this.objid = objid;
+import * as io from 'socket.io-client';
+/**
+ * 
+ */
+export class BlankProxy {
+  constructor(protected broker:Broker, protected objid:string) {
+    
   }
 
-  on(evt, handler) {
+  /**
+   * binding a handler to a remote model event;
+   */
+  on(evt:string, handler:(...args) => any):this {
     this.broker.subscribe(this.objid, evt, handler);
     return this;
   }
 }
 
-function __handleTimeout(broker, reqId) {
-		let req = broker.__requests[reqId];
-		if (req) {
-    req.reject(new Error('timeout'))
-    delete broker.__requests[reqId];
-		}
+/**
+ * sync remote model data on server
+ */
+export class Proxy extends BlankProxy {
+  
+}
+
+/**
+ * define a struct for a pending request to server controller;  
+ */
+interface RequestSpec {
+    resolve: Function;
+    reject: Function;
+    timeout: number;
 }
 
 /**
  * class: Broker(socket)
- *
+ * acts as a client endpoint for remote controller on server 
  */
-class Broker {
-  constructor(socket) {
-    this.socket = socket;
-    this.__requests = {};
-    this.__events = {};
-    this.__reqId = 0;
-    this.onconnected = this.noop;
+export class Broker {
+  private __requests:{[id:number]:RequestSpec} = {};
+  private __events:any = {};
+  private __reqId:number = 0;
+  public onconnected:Function = this.noop;
+  
+  constructor(private socket:SocketIO.Socket) {
     let self = this;
-    socket.on('connect', function () {
-      self.onconnected();
-    }).on('event', (objid, eventName, args) => {
+    socket.on('connect', () => this.onconnected())
+      .on('event', (objid, eventName, args) => {
       // TODO: use pubsub to do event routing
       let objevts = self.__events[objid];
       if (!objevts) {
@@ -49,7 +60,7 @@ class Broker {
         });
       }
     }).on('rpc:result', (reqId, result) => {
-      let req = self.__requests[reqId];
+      let req = this.__requests[reqId];
       if (req) {
         req.resolve(result);
         clearTimeout(req.timeout);
@@ -58,11 +69,11 @@ class Broker {
         console.log('req doesnt exist')
       }
     }).on('rpc:error', (reqId, error) => {
-      let req = self.__requests[reqId];
+      let req = this.__requests[reqId];
       if (req) {
         req.reject(error);
         clearTimeout(req.timeout);
-        delete self.__requests[reqId];
+        delete this.__requests[reqId];
       } else {
         console.log('req doesnt exist')
       }
@@ -76,11 +87,17 @@ class Broker {
   }
 
   noop() { }
-
+  
+  /**
+   * create a local proxy to sync with remote model
+   */
   proxy(objid) {
     return new Proxy(this, objid);
   }
 
+  /**
+   * send a "synchronic" request to remote controller and wait for a response
+   */
   invoke(method, args, timeout) {
     let reqId = this.__reqId++, self = this;
     if (!timeout) {
@@ -88,7 +105,7 @@ class Broker {
     }
     console.log('invoke', method)
     this.socket.emit('rpc:invoke', method, reqId, args);
-    let timer = setTimeout(__handleTimeout, timeout, this, reqId);
+    let timer = setTimeout(this.__handleTimeout, timeout, this, reqId);
     return new Promise((resolve, reject) => {
       self.__requests[reqId] = {
         resolve: resolve,
@@ -98,7 +115,10 @@ class Broker {
     });
   }
 
-  subscribe(objid, evt, handler) {
+  /**
+   * subscribe specific event from a remote model
+   */
+  subscribe(objid:string, evt:string, handler:(...any)=>any):this {
     this.socket.emit('subscribe', objid, evt);
     let objevents = this.__events[objid];
     if (!objevents) {
@@ -111,14 +131,26 @@ class Broker {
 
     return this;
   }
+  
+  /**
+   * handle request timeout error; 
+   */
+  __handleTimeout(broker:Broker, reqId:number) {
+      let req = broker.__requests[reqId];
+      if (req) {
+        req.reject(new Error('timeout'))
+        delete broker.__requests[reqId];
+      }
+  }  
 }
 
-Corona.Broker = Broker;
-Corona.Client = {
-  connect: function(address, callback){
-    this.socket = io.connect(address);
+
+
+export var Client = {
+  connect: function(address:string, callback:Function){
+    this.socket = io(address);
     this.controller = new Broker(this.socket);
-    this.socket.on('initialized', () => {
+    this.client.on('initialized', () => {
       if(!this.initialized){
         this.initialized = true;
         callback(this.controller);
