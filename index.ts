@@ -3,14 +3,14 @@ import * as io from 'socket.io-client';
  * 
  */
 export class BlankProxy {
-  constructor(protected broker:Broker, protected objid:string) {
-    
+  constructor(protected broker: Broker, protected objid: string) {
+
   }
 
   /**
    * binding a handler to a remote model event;
    */
-  on(evt:string, handler:(...args) => any):this {
+  on(evt: string, handler: (...args) => any): this {
     this.broker.subscribe(this.objid, evt, handler);
     return this;
   }
@@ -20,16 +20,16 @@ export class BlankProxy {
  * sync remote model data on server
  */
 export class Proxy extends BlankProxy {
-  
+
 }
 
 /**
  * define a struct for a pending request to server controller;  
  */
 interface RequestSpec {
-    resolve: Function;
-    reject: Function;
-    timeout: number;
+  resolve: Function;
+  reject: Function;
+  timeout: number;
 }
 
 /**
@@ -37,57 +37,58 @@ interface RequestSpec {
  * acts as a client endpoint for remote controller on server 
  */
 export class Broker {
-  private __requests:{[id:number]:RequestSpec} = {};
-  private __events:any = {};
-  private __reqId:number = 0;
-  public onconnected:Function = this.noop;
-  
-  constructor(private socket:SocketIO.Socket) {
+  private __requests: { [id: number]: RequestSpec } = {};
+  private __events: any = {};
+  private __reqId: number = 0;
+  public onconnected: Function = this.noop;
+
+  constructor(private socket: SocketIOClient.Socket) {
     let self = this;
     socket.on('connect', () => this.onconnected())
       .on('event', (objid, eventName, args) => {
-      // TODO: use pubsub to do event routing
-      let objevts = self.__events[objid];
-      if (!objevts) {
-        return console.log('no such object proxy')
-      } else {
-        objevts = objevts[eventName];
+        // TODO: use pubsub to do event routing
+        let objevts = self.__events[objid];
         if (!objevts) {
-          return
+          return console.log('no such object proxy')
+        } else {
+          objevts = objevts[eventName];
+          if (!objevts) {
+            return
+          }
+          objevts.forEach(function (h) {
+            return h.apply(null, args);
+          });
         }
-        objevts.forEach(function (h) {
-          return h.apply(null, args);
-        });
-      }
-    }).on('rpc:result', (reqId, result) => {
-      let req = this.__requests[reqId];
-      if (req) {
-        req.resolve(result);
-        clearTimeout(req.timeout);
-        delete self.__requests[reqId];
-      } else {
-        console.log('req doesnt exist')
-      }
-    }).on('rpc:error', (reqId, error) => {
-      let req = this.__requests[reqId];
-      if (req) {
-        req.reject(error);
-        clearTimeout(req.timeout);
-        delete this.__requests[reqId];
-      } else {
-        console.log('req doesnt exist')
-      }
-    }).on('meta:methods', (methods) => {
-      methods.forEach(m => {
-        this[m] = function (...args) {
-          this.invoke(m, args);
-        }.bind(this)
-      })
-    });
+      }).on('rpc:result', (reqId, result) => {
+        let req = this.__requests[reqId];
+        if (req) {
+          req.resolve(result);
+          clearTimeout(req.timeout);
+          delete self.__requests[reqId];
+        } else {
+          console.log('req doesnt exist')
+        }
+      }).on('rpc:error', (reqId, error) => {
+        let req = this.__requests[reqId];
+        if (req) {
+          req.reject(error);
+          clearTimeout(req.timeout);
+          delete this.__requests[reqId];
+        } else {
+          console.log('req doesnt exist')
+        }
+      }).on('meta:methods', (methods) => {
+        console.log('server exposed:', methods)
+        methods.forEach(m => {
+          this[m] = function (...args) {
+            this.invoke(m, args);
+          }.bind(this)
+        })
+      });
   }
 
   noop() { }
-  
+
   /**
    * create a local proxy to sync with remote model
    */
@@ -118,7 +119,7 @@ export class Broker {
   /**
    * subscribe specific event from a remote model
    */
-  subscribe(objid:string, evt:string, handler:(...any)=>any):this {
+  subscribe(objid: string, evt: string, handler: (...any) => any): this {
     this.socket.emit('subscribe', objid, evt);
     let objevents = this.__events[objid];
     if (!objevents) {
@@ -131,27 +132,27 @@ export class Broker {
 
     return this;
   }
-  
+
   /**
    * handle request timeout error; 
    */
-  __handleTimeout(broker:Broker, reqId:number) {
-      let req = broker.__requests[reqId];
-      if (req) {
-        req.reject(new Error('timeout'))
-        delete broker.__requests[reqId];
-      }
-  }  
+  __handleTimeout(broker: Broker, reqId: number) {
+    let req = broker.__requests[reqId];
+    if (req) {
+      req.reject(new Error('timeout'))
+      delete broker.__requests[reqId];
+    }
+  }
 }
 
 
 
 export var Client = {
-  connect: function(address:string, callback:Function){
+  connect: function (address: string, callback: Function) {
     this.socket = io(address);
     this.controller = new Broker(this.socket);
     this.client.on('initialized', () => {
-      if(!this.initialized){
+      if (!this.initialized) {
         this.initialized = true;
         callback(this.controller);
       }
