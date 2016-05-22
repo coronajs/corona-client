@@ -1,4 +1,5 @@
 import * as io from 'socket.io-client';
+const MAX_SAFE_INTEGER = 9007199254740990
 /**
  * 
  */
@@ -101,6 +102,9 @@ export class Broker {
    */
   invoke(method, args, timeout) {
     let reqId = this.__reqId++, self = this;
+    if(reqId >= MAX_SAFE_INTEGER){
+      this.__reqId = 0;
+    }
     if (!timeout) {
       timeout = 5000;
     }
