@@ -4,6 +4,7 @@
   "description": "client library for corona, a realtime framework built in nodejs",
   "main": "index.js",
   "dependencies": {
+    "bluebird": "^3.4.0",
     "lodash": "^3.10.1",
     "shortid": "^2.2.6",
     "socket.io-client": "^1.4.6"
