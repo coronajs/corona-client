@@ -1,12 +1,13 @@
 {
     "compilerOptions": {
         "outDir": "dist",
-        "module": "system",
+        "module": "umd",
         "target": "es5",
         "noImplicitAny": false,
         "sourceMap": false
     },
     "exclude": [
-        "node_modules"
+        "node_modules",
+        "dist"
     ]
 }

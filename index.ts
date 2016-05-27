@@ -1,52 +1,44 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
+import * as EventEmitter from 'eventemitter3';
+
 const MAX_SAFE_INTEGER = 9007199254740990;
-/**
- *
- */
-export class BlankProxy {
-  constructor(protected broker: Broker, protected objid: string) {
 
-  }
 
-  /**
-   * binding a handler to a remote model event;
-   */
-  on(evt: string, handler: (...args) => any): this {
-    this.broker.subscribe(this.objid, evt, handler);
-    return this;
+class ReactBinding {
+  constructor(model: ModelProxy, target: any) {
+
   }
 }
-BlankProxy.prototype['subscribe'] = BlankProxy.prototype.on
-BlankProxy.prototype['addListener'] = BlankProxy.prototype.on
 /**
  * sync remote model data on server
  */
-export class ModelProxy extends BlankProxy {
-  private value: any;
-  constructor(protected broker: Broker, protected objid: string) {
-    super(broker, objid);
-    this.on('update', this.handleUpdate.bind(this))
+export class ModelProxy extends EventEmitter {
+  constructor(protected broker: Broker, protected keypath: string, protected data: any) {
+    super();
+    this.on('update', (keypath, value) => {
+      this._set(keypath, value);
+    });
   }
 
-  handleUpdate(keypath, value) {
-    this._set(keypath, value);
+  getModel(keypath: string): PromiseLike<ModelProxy> {
+    return this.broker.getModel(`${this.keypath}.${keypath}`);
   }
 
-  private _set(keypath, value) {
+  protected _set(keypath: string, value) {
     if (!keypath || keypath === '') {
-      this.value = value;
+      this.data = value;
       return;
     }
-    if(!this.value){
-      this.value = {};
+    if (!this.data) {
+      this.data = {};
     }
-    
+
     let keypaths = keypath.split('.')
-    let ret = this.value;
+    let ret = this.data;
     let last = keypaths.pop();
     keypaths.forEach((p) => {
-      if(!ret[p]){
+      if (!ret[p]) {
         ret[p] = {}
       }
       ret = ret[p];
@@ -55,14 +47,85 @@ export class ModelProxy extends BlankProxy {
   }
 
   replace(data) {
-    this.value = data;
+    this.data = data;
   }
-  
+
   /**
    * return Rx.Observable
    */
-  observe(event:string){
+  observe(event: string) {
     // return Rx.Observable
+  }
+
+  on(evt: string, handler: Function, context?): this {
+    this.broker.subscribe(this.keypath, evt);
+    super.on(evt, handler, context);
+    return this;
+  }
+
+  emit(event: string, ...args: any[]) {
+    //TODO: propagation
+    return super.emit(event, ...args);
+  }
+
+  dispose() {
+    this.removeAllListeners();
+  }
+}
+
+export interface ModelSpec {
+  className: string;
+  data: any;
+}
+
+var ProxyConstructors = {
+  'Model': ModelProxy,
+  'ModelContainer': ModelContainerProxy
+}
+
+function createProxy(modelSpec: ModelSpec, broker: Broker, keypath:string): ModelProxy {
+  let ctor = ProxyConstructors[modelSpec.className]
+  if (ctor) { 
+    return new ctor(broker, keypath, modelSpec.data);
+  } else {
+    throw new Error('Cannot find that proxy for the class')
+  }
+}
+
+export class ModelContainerProxy extends ModelProxy {
+  constructor(protected broker: Broker, protected keypath: string, protected data: any[]) {
+    super(broker, keypath, {});
+    
+    data.forEach((k) => {
+      this.data[k.data.id] = createProxy(k, this.broker, this.keypath + '.' + k.data.id);
+    })
+
+    this.on('add', (index, modelSpec: ModelSpec) => {
+      this.data[index] = createProxy(modelSpec, this.broker, this.keypath + '.' + index)
+    });
+
+    this.on('remove', (index) => {
+      var m = this.data[index];
+      if (m) {
+        delete this.data[index]
+        m.dispose();
+      }
+    });
+  }
+  
+  getModel(keypath:string):PromiseLike<ModelProxy>{
+    if(keypath == ''){
+      return Promise.resolve(this);
+    }
+    
+    var keys = keypath.split('.')
+    let i = keys.shift();
+    
+    if(keys.length == 0){
+      return Promise.resolve(this.data[i]);
+    } else {
+      return this.data[i].getModel(keys.join('.'))
+    }    
   }
 }
 
@@ -81,26 +144,36 @@ interface RequestSpec {
  */
 export class Broker {
   private __requests: { [id: number]: RequestSpec } = {};
-  private __events: { [keypath: string]: { [eventName: string]: Array<Function> } } = {};
+  private __proxies: { [keypath: string]: ModelProxy } = {};
   private __reqId: number = 0;
   public onconnected: Function = this.noop;
 
   constructor(private socket: SocketIOClient.Socket) {
 
     socket.on('connect', () => this.onconnected())
-      .on('event', (objid, eventName, args) => {
+      .on('event', (keypath, eventName, args) => {
         // TODO: use pubsub to do event routing
-        let objevts = this.__events[objid];
-        if (!objevts) {
+        let m = this.__proxies[keypath];
+        if (!m) {
           return console.log('no such object proxy')
         } else {
-          let handlers = objevts[eventName];
-          if (!handlers) {
-            return
+          m.emit(eventName, ...args);
+
+          // propagation events
+          let k = keypath.split('.'),
+            sum = [],
+            last = k.pop();
+          while (k.length > 0) {
+            let i = k.pop()
+            sum.push([k.join('.'), last]);
+            last = i + '.' + last;
           }
-          handlers.forEach(function (h) {
-            return h.apply(this, args);
-          });
+
+          sum.forEach(([prefix, path]) => {
+            let m = this.__proxies[prefix];
+            if (m)
+              m.emit(path + '#' + eventName, path, ...args);
+          })
         }
       }).on('rpc:result', (reqId, result) => {
         let req = this.__requests[reqId];
@@ -136,11 +209,11 @@ export class Broker {
    * create a local proxy to sync with remote model
    */
   getModel(keypath: string) {
-    let m = new ModelProxy(this, keypath);
-    this.invoke('getModel', [keypath]).then((data) => {
-      m.replace(data);
+    return this.invoke('getModel', [keypath]).then((data) => {
+      let m = new ModelProxy(this, keypath, data);
+      this.__proxies[keypath] = m;
+      return m
     })
-    return m;
   }
 
   /**
@@ -167,32 +240,17 @@ export class Broker {
   /**
    * subscribe specific event from a remote model
    */
-  subscribe(keypath: string, evt: string, handler: Function): this {
+  subscribe(keypath: string, evt: string): this {
     this.socket.emit('subscribe', keypath, evt);
-    let objevents = this.__events[keypath];
-    if (!objevents) {
-      objevents = this.__events[keypath] = {};
-    }
-    if (!objevents[evt]) {
-      objevents[evt] = [];
-    }
-    objevents[evt].push(handler);
-
     return this;
   }
-  
-  
 
   /**
    *
    */
-  unsubscribe(keypath: string, evt: string, handler: Function): this {
-    this.socket.emit('subscribe', keypath, evt);
-    let objevents = this.__events[keypath];
-    if (objevents && objevents[evt]) {
-      let i = objevents[evt].indexOf(handler);
-      objevents[evt].splice(i, 1);
-    }
+  unsubscribe(keypath: string, evt: string): this {
+    this.socket.emit('unsubscribe', keypath, evt);
+
     return this;
   }
 
@@ -209,10 +267,10 @@ export class Broker {
 }
 
 export class Client {
-  private socket:SocketIOClient.Socket;
-  private controller:Broker;
-  private initialized: boolean=false;
-  
+  private socket: SocketIOClient.Socket;
+  private controller: Broker;
+  private initialized: boolean = false;
+
   constructor(address: string, callback: Function) {
     this.socket = io(address);
     this.controller = new Broker(this.socket);
@@ -223,8 +281,8 @@ export class Client {
       }
     });
   }
-  
-  static connect (address: string, callback: Function):Client {
+
+  static connect(address: string, callback: Function): Client {
     return new Client(address, callback);
   }
 }
