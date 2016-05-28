@@ -1,6 +1,6 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
-import * as EventEmitter from 'eventemitter3';
+import * as EventEmitter3 from 'eventemitter3';
 
 const MAX_SAFE_INTEGER = 9007199254740990;
 
@@ -13,7 +13,7 @@ class ReactBinding {
 /**
  * sync remote model data on server
  */
-export class ModelProxy extends EventEmitter {
+export class ModelProxy extends EventEmitter3 {
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super();
     this.on('update', (keypath, value) => {
@@ -83,9 +83,9 @@ var ProxyConstructors = {
   'ModelContainer': ModelContainerProxy
 }
 
-function createProxy(modelSpec: ModelSpec, broker: Broker, keypath:string): ModelProxy {
+function createProxy(modelSpec: ModelSpec, broker: Broker, keypath: string): ModelProxy {
   let ctor = ProxyConstructors[modelSpec.className]
-  if (ctor) { 
+  if (ctor) {
     return new ctor(broker, keypath, modelSpec.data);
   } else {
     throw new Error('Cannot find that proxy for the class')
@@ -95,7 +95,7 @@ function createProxy(modelSpec: ModelSpec, broker: Broker, keypath:string): Mode
 export class ModelContainerProxy extends ModelProxy {
   constructor(protected broker: Broker, protected keypath: string, protected data: any[]) {
     super(broker, keypath, {});
-    
+
     data.forEach((k) => {
       this.data[k.data.id] = createProxy(k, this.broker, this.keypath + '.' + k.data.id);
     })
@@ -112,20 +112,20 @@ export class ModelContainerProxy extends ModelProxy {
       }
     });
   }
-  
-  getModel(keypath:string):PromiseLike<ModelProxy>{
-    if(keypath == ''){
+
+  getModel(keypath: string): PromiseLike<ModelProxy> {
+    if (keypath == '') {
       return Promise.resolve(this);
     }
-    
+
     var keys = keypath.split('.')
     let i = keys.shift();
-    
-    if(keys.length == 0){
+
+    if (keys.length == 0) {
       return Promise.resolve(this.data[i]);
     } else {
       return this.data[i].getModel(keys.join('.'))
-    }    
+    }
   }
 }
 
@@ -209,6 +209,10 @@ export class Broker {
    * create a local proxy to sync with remote model
    */
   getModel(keypath: string) {
+    let p = this.__proxies[keypath];
+    if (p) {
+      return Promise.resolve(p);
+    }
     return this.invoke('getModel', [keypath]).then((data) => {
       let m = new ModelProxy(this, keypath, data);
       this.__proxies[keypath] = m;
@@ -221,13 +225,18 @@ export class Broker {
    */
   invoke(method: string, args, timeout: number = 5000) {
     let reqId = this.__reqId++;
+    if(!(args instanceof Array)){
+      args = [args];
+    }
     if (reqId >= MAX_SAFE_INTEGER) {
       this.__reqId = 0;
     }
 
     console.log('invoke', method);
+    
     this.socket.emit('rpc:invoke', method, reqId, args);
     let timer = setTimeout(this.__handleTimeout, timeout, this, reqId);
+    
     return new Promise((resolve, reject) => {
       this.__requests[reqId] = {
         resolve: resolve,
@@ -273,13 +282,13 @@ export class Client {
 
   constructor(address: string, callback: Function) {
     this.socket = io(address);
-    this.controller = new Broker(this.socket);
     this.socket.on('initialized', () => {
       if (!this.initialized) {
         this.initialized = true;
         callback(this.controller);
       }
-    });
+    });    
+    this.controller = new Broker(this.socket);
   }
 
   static connect(address: string, callback: Function): Client {
