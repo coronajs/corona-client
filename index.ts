@@ -160,7 +160,6 @@ export class Broker {
       .on('event', (keypath, eventName, ...args) => {
         // TODO: use pubsub to do event routing
         let m = this.__proxies[keypath];
-        debugger
         if (!m) {
           return console.log('no such object proxy')
         } else {
