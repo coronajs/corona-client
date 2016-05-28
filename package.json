@@ -2,7 +2,7 @@
   "name": "corona-client",
   "version": "0.0.1",
   "description": "client library for corona, a realtime framework built in nodejs",
-  "main": "index.js",
+  "main": "dist/index.js",
   "dependencies": {
     "bluebird": "^3.4.0",
     "eventemitter3": "^1.2.0",
