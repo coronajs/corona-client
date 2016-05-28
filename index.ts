@@ -1,6 +1,6 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
-import * as EventEmitter3 from 'eventemitter3';
+import {EventEmitter2} from 'eventemitter2';
 
 const MAX_SAFE_INTEGER = 9007199254740990;
 
@@ -13,9 +13,9 @@ class ReactBinding {
 /**
  * sync remote model data on server
  */
-export class ModelProxy extends EventEmitter3 {
+export class ModelProxy extends EventEmitter2 {
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
-    super();
+    super({wildcard: true, maxListeners: 255});
     this.on('change', (keypath, value) => {
       this._set(keypath, value);
     });
@@ -57,16 +57,16 @@ export class ModelProxy extends EventEmitter3 {
     // return Rx.Observable
   }
 
-  on(evt: string, handler: Function, context?): this {
+  on(evt: string, handler: Function) {
     this.broker.subscribe(this.keypath, evt);
-    super.on(evt, handler, context);
+    super.on(evt, handler);
     return this;
   }
 
-  emit(event: string, ...args: any[]) {
-    //TODO: propagation
-    return super.emit(event, ...args);
-  }
+  // emit(event: string, ...args: any[]) {
+  //   //TODO: propagation
+  //   return super.emit(event, ...args);
+  // }
 
   dispose() {
     this.removeAllListeners();
@@ -160,9 +160,11 @@ export class Broker {
       .on('event', (keypath, eventName, ...args) => {
         // TODO: use pubsub to do event routing
         let m = this.__proxies[keypath];
+
         if (!m) {
           return console.log('no such object proxy')
         } else {
+
           m.emit(eventName, ...args);
 
           // propagation events
@@ -170,15 +172,16 @@ export class Broker {
             sum = [],
             last = k.pop();
           while (k.length > 0) {
-            let i = k.pop()
             sum.push([k.join('.'), last]);
+            let i = k.pop()
             last = i + '.' + last;
           }
 
           sum.forEach(([prefix, path]) => {
             let m = this.__proxies[prefix];
             if (m)
-              m.emit(path + '#' + eventName, path, ...args);
+              // m.emit(eventName + '.' + path, path, ...args);
+              m.emit(path  + '.' + eventName, path, ...args);
           })
         }
       }).on('rpc:result', (reqId, result) => {

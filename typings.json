@@ -1,6 +1,7 @@
 {
   "globalDependencies": {
     "bluebird": "registry:dt/bluebird#2.0.0+20160319051630",
+    "eventemitter2": "registry:dt/eventemitter2#0.14.4+20160316155526",
     "eventemitter3": "registry:dt/eventemitter3#1.1.1+20151208234524",
     "shortid": "registry:dt/shortid#0.0.0+20160316155526",
     "socket.io-client": "registry:dt/socket.io-client#1.4.4+20160317120654"

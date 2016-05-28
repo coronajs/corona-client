@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "dependencies": {
     "bluebird": "^3.4.0",
+    "eventemitter2": "^1.0.3",
     "eventemitter3": "^1.2.0",
     "lodash": "^3.10.1",
     "shortid": "^2.2.6",
