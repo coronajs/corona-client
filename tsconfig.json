@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "outDir": "dist",
-        "module": "umd",
+        "module": "commonjs",
         "target": "es5",
         "noImplicitAny": false,
         "sourceMap": false
