@@ -16,7 +16,7 @@ class ReactBinding {
 export class ModelProxy extends EventEmitter3 {
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super();
-    this.on('update', (keypath, value) => {
+    this.on('change', (keypath, value) => {
       this._set(keypath, value);
     });
   }
@@ -78,30 +78,21 @@ export interface ModelSpec {
   data: any;
 }
 
-var ProxyConstructors = {
-  'Model': ModelProxy,
-  'ModelContainer': ModelContainerProxy
-}
-
-function createProxy(modelSpec: ModelSpec, broker: Broker, keypath: string): ModelProxy {
-  let ctor = ProxyConstructors[modelSpec.className]
-  if (ctor) {
-    return new ctor(broker, keypath, modelSpec.data);
-  } else {
-    throw new Error('Cannot find that proxy for the class')
-  }
-}
 
 export class ModelContainerProxy extends ModelProxy {
-  constructor(protected broker: Broker, protected keypath: string, protected data: any[]) {
+  constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super(broker, keypath, {});
 
-    data.forEach((k) => {
-      this.data[k.data.id] = createProxy(k, this.broker, this.keypath + '.' + k.data.id);
+    Object.keys(data).forEach((k) => {
+      let p = this.keypath + '.' + k;
+      this.data[k] = createProxy(data[k], this.broker, p);
+      broker.register(p, this);
     })
 
     this.on('add', (index, modelSpec: ModelSpec) => {
-      this.data[index] = createProxy(modelSpec, this.broker, this.keypath + '.' + index)
+      let p = this.keypath + '.' + index;
+      this.data[index] = createProxy(modelSpec, this.broker, p)
+      broker.register(p, this);
     });
 
     this.on('remove', (index) => {
@@ -129,6 +120,21 @@ export class ModelContainerProxy extends ModelProxy {
   }
 }
 
+var ProxyConstructors = {
+  'Model': ModelProxy,
+  'ModelContainer': ModelContainerProxy
+}
+
+function createProxy(modelSpec: ModelSpec, broker: Broker, keypath: string): ModelProxy {
+  console.log(modelSpec)
+  let ctor = ProxyConstructors[modelSpec.className]
+  if (ctor) {
+    return new ctor(broker, keypath, modelSpec.data);
+  } else {
+    throw new Error('Cannot find that proxy for the class')
+  }
+}
+
 /**
  * define a struct for a pending request to server controller;
  */
@@ -151,9 +157,10 @@ export class Broker {
   constructor(private socket: SocketIOClient.Socket) {
 
     socket.on('connect', () => this.onconnected())
-      .on('event', (keypath, eventName, args) => {
+      .on('event', (keypath, eventName, ...args) => {
         // TODO: use pubsub to do event routing
         let m = this.__proxies[keypath];
+        debugger
         if (!m) {
           return console.log('no such object proxy')
         } else {
@@ -196,9 +203,11 @@ export class Broker {
       }).on('meta:methods', (methods) => {
         console.log('server exposed:', methods)
         methods.forEach(m => {
-          this[m] = function (...args) {
-            this.invoke(m, args);
-          }.bind(this)
+          if (!this[m]) {
+            this[m] = function (...args) {
+              this.invoke(m, args);
+            }.bind(this)
+          }
         })
       });
   }
@@ -213,11 +222,14 @@ export class Broker {
     if (p) {
       return Promise.resolve(p);
     }
-    return this.invoke('getModel', [keypath]).then((data) => {
-      let m = new ModelProxy(this, keypath, data);
-      this.__proxies[keypath] = m;
-      return m
+    return this.invoke('getModelSpec', [keypath]).then((data: ModelSpec) => {
+      return this.__proxies[keypath] = createProxy(data, this, keypath);
     })
+  }
+  
+  register(keypath: string, model:ModelProxy){
+    this.__proxies[keypath] = model;
+    return model;
   }
 
   /**
@@ -225,7 +237,7 @@ export class Broker {
    */
   invoke(method: string, args, timeout: number = 5000) {
     let reqId = this.__reqId++;
-    if(!(args instanceof Array)){
+    if (!(args instanceof Array)) {
       args = [args];
     }
     if (reqId >= MAX_SAFE_INTEGER) {
@@ -233,10 +245,10 @@ export class Broker {
     }
 
     console.log('invoke', method);
-    
+
     this.socket.emit('rpc:invoke', method, reqId, args);
     let timer = setTimeout(this.__handleTimeout, timeout, this, reqId);
-    
+
     return new Promise((resolve, reject) => {
       this.__requests[reqId] = {
         resolve: resolve,
@@ -287,7 +299,7 @@ export class Client {
         this.initialized = true;
         callback(this.controller);
       }
-    });    
+    });
     this.controller = new Broker(this.socket);
   }
 
