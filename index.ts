@@ -92,9 +92,9 @@ export class ModelContainerProxy extends ModelProxy {
       broker.register(p, this);
     })
 
-    this.on('add', (index, modelSpec: ModelSpec) => {
-      let p = this.keypath + '.' + index;
-      this.data[index] = createProxy(modelSpec, this.broker, p)
+    this.on('add', (modelSpec: ModelSpec) => {
+      let p = this.keypath + '.' + modelSpec.id;
+      this.data[modelSpec.id] = createProxy(modelSpec, this.broker, p)
       broker.register(p, this);
     });
 
@@ -232,6 +232,14 @@ export class Broker {
     })
   }
   
+  /**
+   * get multi models
+   */
+  getModels(keypaths: string[]): PromiseLike<ModelProxy[]>{
+    let exists = {};
+    
+  }
+  
   register(keypath: string, model:ModelProxy){
     this.__proxies[keypath] = model;
     return model;
@@ -308,7 +316,7 @@ export class Client {
     this.controller = new Broker(this.socket);
   }
 
-  static connect(address: string, callback: Function): Client {
-    return new Client(address, callback);
+  static connect(address: string, callback: Function): PromiseLike<Client> {
+    return new Promise( resolve  => new Client(address, resolve));
   }
 }
