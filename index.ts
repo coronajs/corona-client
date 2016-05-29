@@ -15,13 +15,20 @@ class ReactBinding {
  * sync remote model data on server
  */
 export class ModelProxy extends EventEmitter2 {
-  public id:string|number;
+  public id: string | number;
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
-    super({wildcard: true, maxListeners: 255});
+    super({ wildcard: true, maxListeners: 255 });
     this.id = data.id;
+    let initialized = false
     this.on('change', (keypath, value) => {
-      this._set(keypath, value);
+      if (initialized) {
+        this._set(keypath, value);
+      }
     });
+    setImmediate(() => {
+      Object.keys(data).forEach(k => this.emit('change', k, data[k]));
+      initialized = true
+    })
   }
 
   getModel(keypath: string): PromiseLike<ModelProxy> {
@@ -78,12 +85,12 @@ export class ModelProxy extends EventEmitter2 {
 
 export interface ModelSpec {
   className: string;
-  id: string|number;
+  id: string | number;
   data: any;
 }
 
 
-export class ModelContainerProxy extends ModelProxy{
+export class ModelContainerProxy extends ModelProxy {
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super(broker, keypath, {});
     Object.keys(data).forEach((k) => {
@@ -122,14 +129,13 @@ export class ModelContainerProxy extends ModelProxy{
       return this.data[i].getModel(keys.join('.'))
     }
   }
-  
-  forEach(cb:Function):this {
+
+  forEach(cb: Function): this {
     Object.keys(this.data).forEach((k) => cb(this.data[k], k));
     return this;
   }
-  
-  forEachValue(cb:Function):this
-  {
+
+  forEachValue(cb: Function): this {
     Object.keys(this.data).forEach(k => cb(this.data[k].data, k));
     return this
   }
@@ -196,7 +202,7 @@ export class Broker {
             let m = this.__proxies[prefix];
             if (m)
               // m.emit(eventName + '.' + path, path, ...args);
-              m.emit(path  + '.' + eventName, path, ...args);
+              m.emit(path + '.' + eventName, path, ...args);
           })
         }
       }).on('rpc:result', (reqId, result) => {
@@ -234,7 +240,7 @@ export class Broker {
   /**
    * create a local proxy to sync with remote model
    */
-  getModel(keypath: string) {
+  getModel(keypath: string): PromiseLike<ModelProxy> {
     let p = this.__proxies[keypath];
     if (p) {
       return Promise.resolve(p);
@@ -243,27 +249,27 @@ export class Broker {
       return this.__proxies[keypath] = createProxy(data, this, keypath);
     })
   }
-  
+
   getModels(keypaths: string[]): PromiseLike<ModelProxy[]> {
     return this.getMultiModels(keypaths).then((maps) => {
       return keypaths.map(k => maps[k]);
     })
   }
-  
+
   /**
    * get multi models
    */
-  getMultiModels(keypaths: string[]): PromiseLike<{[keypath:string]:ModelProxy}>{
+  getMultiModels(keypaths: string[]): PromiseLike<{ [keypath: string]: ModelProxy }> {
     let ret = pick(this.__proxies, keypaths);
-    
+
     return this.invoke('getMultiModelSpec', [keypaths]).then((specs) => {
       let m = mapValues(specs, (s, keypath) => createProxy(s, this, keypath))
       this.__proxies = merge(this.__proxies, m);
       return merge(ret, m);
-    })    
+    })
   }
-  
-  register(keypath: string, model:ModelProxy){
+
+  register(keypath: string, model: ModelProxy) {
     this.__proxies[keypath] = model;
     return model;
   }
@@ -340,6 +346,6 @@ export class Client {
   }
 
   static connect(address: string, callback: Function): PromiseLike<Client> {
-    return new Promise( resolve  => new Client(address, resolve));
+    return new Promise(resolve => new Client(address, resolve));
   }
 }
