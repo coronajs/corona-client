@@ -14,8 +14,10 @@ class ReactBinding {
  * sync remote model data on server
  */
 export class ModelProxy extends EventEmitter2 {
+  public id:string|number;
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super({wildcard: true, maxListeners: 255});
+    this.id = data.id;
     this.on('change', (keypath, value) => {
       this._set(keypath, value);
     });
@@ -75,6 +77,7 @@ export class ModelProxy extends EventEmitter2 {
 
 export interface ModelSpec {
   className: string;
+  id: string|number;
   data: any;
 }
 
