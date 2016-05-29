@@ -100,9 +100,9 @@ export class ModelContainerProxy extends ModelProxy {
       broker.register(p, m);
     })
 
-    this.on('add', (modelSpec: ModelSpec) => {
-      let p = this.keypath + '.' + modelSpec.id;
-      this.data[modelSpec.id] = createProxy(modelSpec, this.broker, p)
+    this.on('add', (id:number|string, modelSpec: ModelSpec) => {
+      let p = this.keypath + '.' + id;
+      this.data[id] = createProxy(modelSpec, this.broker, p)
       broker.register(p, this);
     });
 
