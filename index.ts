@@ -1,6 +1,7 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
 import {EventEmitter2} from 'eventemitter2';
+import {pick, mapValues, merge} from 'lodash';
 
 const MAX_SAFE_INTEGER = 9007199254740990;
 
@@ -82,14 +83,14 @@ export interface ModelSpec {
 }
 
 
-export class ModelContainerProxy extends ModelProxy {
+export class ModelContainerProxy extends ModelProxy{
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super(broker, keypath, {});
-
     Object.keys(data).forEach((k) => {
       let p = this.keypath + '.' + k;
-      this.data[k] = createProxy(data[k], this.broker, p);
-      broker.register(p, this);
+      let m = createProxy(data[k], this.broker, p);
+      this.data[k] = m
+      broker.register(p, m);
     })
 
     this.on('add', (modelSpec: ModelSpec) => {
@@ -120,6 +121,17 @@ export class ModelContainerProxy extends ModelProxy {
     } else {
       return this.data[i].getModel(keys.join('.'))
     }
+  }
+  
+  forEach(cb:Function):this {
+    Object.keys(this.data).forEach((k) => cb(this.data[k], k));
+    return this;
+  }
+  
+  forEachValue(cb:Function):this
+  {
+    Object.keys(this.data).forEach(k => cb(this.data[k].data, k));
+    return this
   }
 }
 
@@ -232,12 +244,23 @@ export class Broker {
     })
   }
   
+  getModels(keypaths: string[]): PromiseLike<ModelProxy[]> {
+    return this.getMultiModels(keypaths).then((maps) => {
+      return keypaths.map(k => maps[k]);
+    })
+  }
+  
   /**
    * get multi models
    */
-  getModels(keypaths: string[]): PromiseLike<ModelProxy[]>{
-    let exists = {};
+  getMultiModels(keypaths: string[]): PromiseLike<{[keypath:string]:ModelProxy}>{
+    let ret = pick(this.__proxies, keypaths);
     
+    return this.invoke('getMultiModelSpec', [keypaths]).then((specs) => {
+      let m = mapValues(specs, (s, keypath) => createProxy(s, this, keypath))
+      this.__proxies = merge(this.__proxies, m);
+      return merge(ret, m);
+    })    
   }
   
   register(keypath: string, model:ModelProxy){
