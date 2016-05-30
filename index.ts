@@ -1,7 +1,7 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
 import {EventEmitter2} from 'eventemitter2';
-import {pick, mapValues, merge} from 'lodash';
+import {pick, mapValues, merge, set} from 'lodash';
 
 const MAX_SAFE_INTEGER = 9007199254740990;
 
@@ -22,7 +22,7 @@ export class ModelProxy extends EventEmitter2 {
     let initialized = false
     this.on('change', (keypath, value) => {
       if (initialized) {
-        this._set(keypath, value);
+        set(this.data, keypath, value);
       }
     });
     setImmediate(() => {
@@ -40,6 +40,7 @@ export class ModelProxy extends EventEmitter2 {
       this.data = value;
       return;
     }
+    
     if (!this.data) {
       this.data = {};
     }
@@ -100,10 +101,12 @@ export class ModelContainerProxy extends ModelProxy {
       broker.register(p, m);
     })
 
-    this.on('add', (id:number|string, modelSpec: ModelSpec) => {
+    this.on('add', (id:string, modelSpec: ModelSpec) => {
+      debugger
+      id = id.toString();
       let p = this.keypath + '.' + id;
-      this.data[id] = createProxy(modelSpec, this.broker, p)
-      broker.register(p, this);
+      this.data[id] = createProxy(modelSpec, this.broker, p)  
+      broker.register(p, this.data[id]);
     });
 
     this.on('remove', (index) => {
@@ -111,6 +114,7 @@ export class ModelContainerProxy extends ModelProxy {
       if (m) {
         delete this.data[index]
         m.dispose();
+        broker.unregister(this.keypath + '.' + index);
       }
     });
   }
@@ -147,7 +151,6 @@ var ProxyConstructors = {
 }
 
 function createProxy(modelSpec: ModelSpec, broker: Broker, keypath: string): ModelProxy {
-  console.log(modelSpec)
   let ctor = ProxyConstructors[modelSpec.className]
   if (ctor) {
     return new ctor(broker, keypath, modelSpec.data);
@@ -181,11 +184,10 @@ export class Broker {
       .on('event', (keypath, eventName, ...args) => {
         // TODO: use pubsub to do event routing
         let m = this.__proxies[keypath];
-
         if (!m) {
-          return console.log('no such object proxy')
+          console.log('no such object proxy')
+          return
         } else {
-
           m.emit(eventName, ...args);
 
           // propagation events
@@ -272,6 +274,10 @@ export class Broker {
   register(keypath: string, model: ModelProxy) {
     this.__proxies[keypath] = model;
     return model;
+  }
+  
+  unregister(keypath) {
+    delete this.__proxies[keypath];
   }
 
   /**
