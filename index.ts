@@ -102,8 +102,6 @@ export class ModelContainerProxy extends ModelProxy {
     })
 
     this.on('add', (id:string, modelSpec: ModelSpec) => {
-      debugger
-      id = id.toString();
       let p = this.keypath + '.' + id;
       this.data[id] = createProxy(modelSpec, this.broker, p)  
       broker.register(p, this.data[id]);
