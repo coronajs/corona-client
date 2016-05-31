@@ -127,7 +127,7 @@ export class ModelContainerProxy extends ModelProxy {
         set(this.dataMap, `${id}.${prop}`, val);
       }
       // 如果操作的是现在的根 并且 当前值不为 Object
-      else if (!keypath || keypath === '' && typeof val != 'object') {
+      else if (!prop || prop === '' && typeof val != 'object') {
         this.dataMap[id] = val;
       }
     })
