@@ -1,7 +1,7 @@
 import * as io from 'socket.io-client';
 import * as Promise from 'bluebird'
 import {EventEmitter2} from 'eventemitter2';
-import {pick, mapValues, merge, set} from 'lodash';
+import {pick, flatten, mapValues, merge, set} from 'lodash';
 
 const MAX_SAFE_INTEGER = 9007199254740990;
 
@@ -103,7 +103,7 @@ export class ModelContainerProxy extends ModelProxy {
 
     this.on('add', (id:string, modelSpec: ModelSpec) => {
       let p = this.keypath + '.' + id;
-      this.data[id] = createProxy(modelSpec, this.broker, p)  
+      this.data[id] = createProxy(modelSpec, this.broker, p);
       broker.register(p, this.data[id]);
     });
 
@@ -250,7 +250,8 @@ export class Broker {
     })
   }
 
-  getModels(keypaths: string[]): PromiseLike<ModelProxy[]> {
+  getModels(...keypaths: string[]): PromiseLike<ModelProxy[]> {
+    keypaths = flatten(keypaths);
     return this.getMultiModels(keypaths).then((maps) => {
       return keypaths.map(k => maps[k]);
     })
@@ -259,7 +260,8 @@ export class Broker {
   /**
    * get multi models
    */
-  getMultiModels(keypaths: string[]): PromiseLike<{ [keypath: string]: ModelProxy }> {
+  getMultiModels(...keypaths: string[]): PromiseLike<{ [keypath: string]: ModelProxy }> {
+    keypaths = flatten(keypaths);
     let ret = pick(this.__proxies, keypaths);
 
     return this.invoke('getMultiModelSpec', [keypaths]).then((specs) => {
