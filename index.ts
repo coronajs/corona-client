@@ -35,27 +35,27 @@ export class ModelProxy extends EventEmitter2 {
     return this.broker.getModel(`${this.keypath}.${keypath}`);
   }
 
-  protected _set(keypath: string, value) {
-    if (!keypath || keypath === '') {
-      this.data = value;
-      return;
-    }
+  // protected _set(keypath: string, value) {
+  //   if (!keypath || keypath === '') {
+  //     this.data = value;
+  //     return;
+  //   }
     
-    if (!this.data) {
-      this.data = {};
-    }
+  //   if (!this.data) {
+  //     this.data = {};
+  //   }
 
-    let keypaths = keypath.split('.')
-    let ret = this.data;
-    let last = keypaths.pop();
-    keypaths.forEach((p) => {
-      if (!ret[p]) {
-        ret[p] = {}
-      }
-      ret = ret[p];
-    })
-    ret[last] = value;
-  }
+  //   let keypaths = keypath.split('.')
+  //   let ret = this.data;
+  //   let last = keypaths.pop();
+  //   keypaths.forEach((p) => {
+  //     if (!ret[p]) {
+  //       ret[p] = {}
+  //     }
+  //     ret = ret[p];
+  //   })
+  //   ret[last] = value;
+  // }
 
   replace(data) {
     this.data = data;
@@ -92,6 +92,8 @@ export interface ModelSpec {
 
 
 export class ModelContainerProxy extends ModelProxy {
+  dataMap = {}
+  
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super(broker, keypath, {});
     Object.keys(data).forEach((k) => {
@@ -105,16 +107,35 @@ export class ModelContainerProxy extends ModelProxy {
       let p = this.keypath + '.' + id;
       this.data[id] = createProxy(modelSpec, this.broker, p);
       broker.register(p, this.data[id]);
+      this.dataMap[id] = this.data[id].data;
     });
 
-    this.on('remove', (index) => {
-      var m = this.data[index];
+    this.on('remove', (id) => {
+      var m = this.data[id];
       if (m) {
-        delete this.data[index]
+        delete this.data[id]
         m.dispose();
-        broker.unregister(this.keypath + '.' + index);
+        broker.unregister(this.keypath + '.' + id);
+        delete this.dataMap[id];
       }
     });
+    
+    // 处理dataMap
+    this.on('*.change', (id: string, prop: string, val: any) => {
+      // 如果之前的根不是 Object
+      if (typeof this.dataMap[id] != 'object') {
+        set(this.dataMap, `${id}.${prop}`, val);
+      }
+      // 如果操作的是现在的根 并且 当前值不为 Object
+      else if (!prop || prop === '' && typeof val != 'object') {
+        this.dataMap[id] = val;
+      }
+    })
+    
+    let self = this;
+    this.forEachValue((data, key) => {
+      self.dataMap[key] = data;
+    })
   }
 
   getModel(keypath: string): PromiseLike<ModelProxy> {
