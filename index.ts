@@ -361,8 +361,9 @@ export class Client {
   private controller: Broker;
   private initialized: boolean = false;
 
-  constructor(address: string, callback: Function) {
-    this.socket = io(address);
+  constructor(address: string, callback: Function, opt: any = {}) {
+    opt['path'] = '/corona';
+    this.socket = io.connect(address, opt);
     this.socket.on('initialized', () => {
       if (!this.initialized) {
         this.initialized = true;
