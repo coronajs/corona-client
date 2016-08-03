@@ -376,8 +376,7 @@ export class Client {
   private controller: Broker;
   private initialized: boolean = false;
 
-  constructor(address: string, callback: Function) {
-    this.socket = io(address);
+  constructor(address: string, callback: Function, opt: any = {}) {
     let timeout = setTimeout(() => {
       throw new Error('wait for server initialized timeout')
     }, 10000)
