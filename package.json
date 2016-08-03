@@ -1,6 +1,6 @@
 {
   "name": "corona-client",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "client library for corona, a realtime framework built in nodejs",
   "main": "dist/index.js",
   "dependencies": {

@@ -31,6 +31,9 @@ export class ModelProxy extends EventEmitter2 {
     })
   }
 
+  /**
+   * obtain child model
+   */
   getModel(keypath: string): PromiseLike<ModelProxy> {
     return this.broker.getModel(`${this.keypath}.${keypath}`);
   }
@@ -40,7 +43,7 @@ export class ModelProxy extends EventEmitter2 {
   //     this.data = value;
   //     return;
   //   }
-    
+
   //   if (!this.data) {
   //     this.data = {};
   //   }
@@ -93,7 +96,7 @@ export interface ModelSpec {
 
 export class ModelContainerProxy extends ModelProxy {
   dataMap = {}
-  
+
   constructor(protected broker: Broker, protected keypath: string, protected data: any) {
     super(broker, keypath, {});
     Object.keys(data).forEach((k) => {
@@ -103,7 +106,7 @@ export class ModelContainerProxy extends ModelProxy {
       broker.register(p, m);
     })
 
-    this.on('add', (id:string, modelSpec: ModelSpec) => {
+    this.on('add', (id: string, modelSpec: ModelSpec) => {
       let p = this.keypath + '.' + id;
       this.data[id] = createProxy(modelSpec, this.broker, p);
       broker.register(p, this.data[id]);
@@ -119,7 +122,7 @@ export class ModelContainerProxy extends ModelProxy {
         delete this.dataMap[id];
       }
     });
-    
+
     // 处理dataMap
     this.on('*.change', (id: string, prop: string, val: any) => {
       // 如果之前的根不是 Object
@@ -131,7 +134,7 @@ export class ModelContainerProxy extends ModelProxy {
         this.dataMap[id] = val;
       }
     })
-    
+
     let self = this;
     this.forEachValue((data, key) => {
       self.dataMap[key] = data;
@@ -178,6 +181,12 @@ function createProxy(modelSpec: ModelSpec, broker: Broker, keypath: string): Mod
   }
 }
 
+/**
+ * it means this object is still not sync with remote server. and even don't know if the type matches
+ */
+class ProxyStub {
+  
+}
 /**
  * define a struct for a pending request to server controller;
  */
@@ -271,6 +280,9 @@ export class Broker {
     })
   }
 
+  /**
+   * get multi models and return an array with corresponding order
+   */
   getModels(...keypaths: string[]): PromiseLike<ModelProxy[]> {
     keypaths = flatten(keypaths);
     return this.getMultiModels(keypaths).then((maps) => {
@@ -279,9 +291,9 @@ export class Broker {
   }
 
   /**
-   * get multi models
+   * get multi models and retuan a map
    */
-  getMultiModels(...keypaths: string[]): PromiseLike<{ [keypath: string]: ModelProxy }> {
+  getMultiModels(...keypaths: Array<string | string[]>): PromiseLike<{ [keypath: string]: ModelProxy }> {
     keypaths = flatten(keypaths);
     let ret = pick(this.__proxies, keypaths);
 
@@ -292,11 +304,14 @@ export class Broker {
     })
   }
 
+  /**
+   * 
+   */
   register(keypath: string, model: ModelProxy) {
     this.__proxies[keypath] = model;
     return model;
   }
-  
+
   unregister(keypath) {
     delete this.__proxies[keypath];
   }
@@ -304,7 +319,7 @@ export class Broker {
   /**
    * send a "synchronic" request to remote controller and wait for a response
    */
-  invoke(method: string, args, timeout: number = 5000) {
+  invoke(method: string, args: any[], timeout: number = 5000) {
     let reqId = this.__reqId++;
     if (!(args instanceof Array)) {
       args = [args];
@@ -363,9 +378,14 @@ export class Client {
 
   constructor(address: string, callback: Function) {
     this.socket = io(address);
+    let timeout = setTimeout(() => {
+      throw new Error('wait for server initialized timeout')
+    }, 10000)
+
     this.socket.on('initialized', () => {
       if (!this.initialized) {
         this.initialized = true;
+        clearTimeout(timeout);
         callback(this.controller);
       }
     });
